@@ -1,8 +1,10 @@
+
 #include <Settings.h>
 
 #include <SPI.h>
 #include <Elcano_Serial.h>
 #include <Servo.h>
+#include <PID_v1.h>
 
 //#include <SoftwareSerial.h>
 // @ToDo: Are these specific to some particular setup or trike? If so,
@@ -78,7 +80,6 @@ const unsigned long HubAtZero = 1159448;
 int max_rc = MAX_RC;
 int mid = MIDDLE;
 int min_rc = MIN_RC;
-#define LED_PIN_OUT 16
 //==========================================================================================
 void ISR_TURN_rise() {
   noInterrupts();
@@ -230,7 +231,7 @@ void setup()
   steer(STRAIGHT_TURN_OUT);
   brake(MAX_BRAKE_OUT);
   moveVehicle(MIN_ACC_OUT);
-  //setup7seg();    // Initialize 7 segment display for speedometer
+  setup7seg();    // Initialize 7 segment display for speedometer
   delay(500);   // let vehicle stabilize
   //brake(MIN_BRAKE_OUT);
   Serial.begin(9600);
@@ -244,7 +245,7 @@ void setup()
   {
     speed_errors[i] = 0;
   }
-  //setupWheelRev(); // WheelRev4 addition
+  setupWheelRev(); // WheelRev4 addition
   CalibrateTurnAngle(32, 20);
   calibrationTime_ms = millis();
         attachInterrupt(digitalPinToInterrupt(IRPT_TURN),  ISR_TURN_rise,  RISING);
@@ -285,10 +286,10 @@ void loop() {
     processHighLevel(&Results);
   //    Print7( true, local_results);
 
-  Results.Clear();
-  Results.kind = MSG_SENSOR;
-  Results.angle_deg = TurnAngle_degx10() / 10;
-  //show_speed (&Results);
+//  Results.Clear();
+//  Results.kind = MSG_SENSOR;
+//  Results.angle_deg = TurnAngle_degx10() / 10;
+  show_speed (&Results);
 
   // Report how long the loop took.
   unsigned long endTime = micros();
@@ -561,15 +562,15 @@ byte processRC (unsigned long *results){
 /*---------------------------------------------------------------------------------------*/
 void processHighLevel(SerialData * results)
 {
-  results->update();
+  //results->update();
   //Steer
   int turn_signal = convertDeg(results->angle_deg);
   steer(turn_signal);
   //End Steer
    //Throttle
-  ThrottlePID(10*results->speed_cmPs);
+  Throttle_PID(10*results->speed_cmPs);
   //End Throttle
-  writeSerial(&Serial3, &results);
+  writeSerial(&Serial3, results);
 }
 /*---------------------------------------------------------------------------------------*/
 //Converts RC values to corresponding values for the PWM output
@@ -630,7 +631,7 @@ int convertDeg(int deg)
   const int actuatorRange = LEFT_TURN_OUT - RIGHT_TURN_OUT;
   const int degRange = TURN_MAX_DEG * 2;
   deg += TURN_MAX_DEG;
-  double operand = (double)deg / (double)degRange;
+  float operand = (float)deg / (float)degRange;
   operand *= actuatorRange;
   operand += RIGHT_TURN_OUT;
   //set max values if out of range
@@ -841,8 +842,7 @@ static struct hist {
 } history;
 
 /*---------------------------------------------------------------------------------------*/
-// WheelRev is called by an interrupt.
-// This is all WAY TOO LONG for an interrupt
+// WheelRev is called by an interrupt pin.
 void WheelRev()
 {
   //static int flip = 0;
@@ -1153,6 +1153,9 @@ int TurnAngle_degx10()
   return new_turn_degx10;
 }
 /*---------------------------------------------------------------------------------------*/
+void throttlePID(){
+  
+}
 void Throttle_PID(long error_speed_mmPs)
 
 /* Use throttle and brakes to keep vehicle at a desired speed.
@@ -1192,7 +1195,7 @@ void Throttle_PID(long error_speed_mmPs)
   speed_errors[error_index] = error_speed_mmPs;
   error_sum += error_speed_mmPs;
   mean_speed_error = error_sum / ERROR_HISTORY;
-  i = (error_index - 1) % ERROR_HISTORY;
+  i = (error_index - 1) % ERROR_HISTORY; // What is i supposed to represent?
   if (++error_index >= ERROR_HISTORY)
     error_index = 0;
   extrapolated_error = 2 * error_speed_mmPs - speed_errors[i];
@@ -1212,6 +1215,7 @@ void Throttle_PID(long error_speed_mmPs)
     brake_control -= brake_increase;
     if (brake_control > MAX_BRAKE_OUT)
       brake_control = MAX_BRAKE_OUT;
+      
     brake(brake_control);
   }
   else if (PID_error < speed_tolerance_mmPs)
